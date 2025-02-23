@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Bot Management</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --primary-color: #4a90e2;  /* Calmer blue */
+            --secondary-color: #f5f5f5;
+            --border-color: #e0e0e0;
+            --success-color: #66bb6a;
+            --error-color: #e57373;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --text-color: #ffffff;
+            --primary-color: #5c9ce6;  /* Calmer blue for dark mode */
+            --secondary-color: #333333;
+            --border-color: #404040;
+            --success-color: #81C784;
+            --error-color: #E57373;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        body { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            transition: all 0.3s ease;
+            opacity: 0;
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        #managementInterface {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s ease;
+        }
+
+        #managementInterface.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .theme-switch {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            cursor: pointer;
+            font-size: 24px;
+            opacity: 0;
+            animation: fadeIn 0.5s ease 0.3s forwards;
+        }
+
+        input, textarea, select {
+            background: var(--secondary-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .button-item {
+            background: var(--secondary-color);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+
+        .format-hints {
+            background: var(--secondary-color);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+
+        .error { color: var(--error-color); }
+        .success { color: var(--success-color); }
+
+        pre, code {
+            background: var(--secondary-color);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        h2, h3 {
+            color: var(--primary-color);
+        }
+
+        textarea#newButtonResponse {
+            min-height: 200px;
+            font-family: monospace;
+            line-height: 1.4;
+        }
+
+        .preview-box {
+            background: var(--secondary-color);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            opacity: 0.8;
+        }
+
+        .preview-box b {
+            color: var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="theme-switch" onclick="toggleTheme()">🌓</div>
+    <div id="loginForm">
+        <h2>Admin Authentication</h2>
+        <input type="number" id="chatId" placeholder="Enter your Telegram Chat ID">
+        <button onclick="authenticate()">Login</button>
+        <p id="loginError" class="error hidden"></p>
+    </div>
+
+    <div id="managementInterface" class="hidden">
+        <h2>Button Management</h2>
+        <div>
+            <h3>Add New Button</h3>
+            <div style="margin-bottom: 10px;">
+                <label for="parentButton"><b>Choose where to add button:</b></label>
+                <select id="parentButton" style="width: 100%; margin: 5px 0;">
+                    <option value="">📎 Create as Top Level Button</option>
+                    <!-- Parent buttons will be populated here -->
+                </select>
+            </div>
+            <input type="text" id="newButtonText" placeholder="Button Text">
+            <textarea 
+                id="newButtonResponse" 
+                placeholder="Button Response - Use markdown-style formatting:
+**bold text**
+*italic text*
+__underlined text__
+~~strikethrough~~
+`code block`
+[Link text](https://example.com)"
+            ></textarea>
+            <div id="preview" class="preview-box">
+                <b>Preview:</b>
+                <div id="previewContent"></div>
+            </div>
+            <div class="format-hints">
+                Quick Formatting Guide:
+                <ul>
+                    <li><code>**text**</code> - <b>bold text</b></li>
+                    <li><code>*text*</code> - <i>italic text</i></li>
+                    <li><code>__text__</code> - <u>underlined text</u></li>
+                    <li><code>~~text~~</code> - <s>strikethrough text</s></li>
+                    <li><code>`code`</code> - <code>monospace text</code></li>
+                    <li><code>[text](url)</code> - <a href="#">link</a></li>
+                    <li>Use regular newlines for paragraphs</li>
+                </ul>
+            </div>
+            <button onclick="addButton()">Add Button</button>
+        </div>
+
+        <div id="buttonList" class="button-list">
+            <h3>Existing Buttons</h3>
+            <!-- Buttons will be populated here -->
+        </div>
+    </div>
+
+    <script>
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            if (currentTheme === 'dark') {
+                body.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // Apply saved theme on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+            }
+        });
+
+        let currentChatId = null;
+
+        async function authenticate() {
+            const chatId = document.getElementById('chatId').value;
+            try {
+                const response = await fetch('/api/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chatId })
+                });
+                
+                if (response.ok) {
+                    currentChatId = chatId;
+                    document.getElementById('loginForm').style.display = 'none';
+                    const mgmtInterface = document.getElementById('managementInterface');
+                    mgmtInterface.style.display = 'block';
+                    // Add small delay for smooth animation
+                    setTimeout(() => {
+                        mgmtInterface.classList.add('visible');
+                    }, 100);
+                    loadButtons();
+                } else {
+                    document.getElementById('loginError').textContent = 'Authentication failed';
+                    document.getElementById('loginError').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Authentication error:', error);
+            }
+        }
+
+        async function loadButtons() {
+            const response = await fetch('/api/buttons');
+            const buttons = await response.json();
+            const buttonList = document.getElementById('buttonList');
+            const parentSelect = document.getElementById('parentButton');
+            
+            buttonList.innerHTML = '<h3>Existing Buttons</h3>';
+            parentSelect.innerHTML = '<option value="">📎 Create as Top Level Button</option>';
+            
+            function renderButton(button, level = 0) {
+                const div = document.createElement('div');
+                div.className = 'button-item';
+                div.style.marginLeft = level * 20 + 'px';
+                const formattedResponse = button.response.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                div.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <b>${button.text}</b>
+                        ${button.subButtons?.length ? 
+                            `<span style="color: var(--text-color); opacity: 0.7;"> (${button.subButtons.length} sub-buttons)</span>` 
+                            : ''}
+                    </div>
+                    <div style="margin-bottom: 10px;">Response: <pre>${formattedResponse}</pre></div>
+                    <div>
+                        <button onclick="deleteButton('${button.id}')" style="background: var(--error-color)">Delete</button>
+                        <button onclick="editButton('${button.id}')">Edit</button>
+                    </div>
+                `;
+                buttonList.appendChild(div);
+
+                // Add to parent select without emojis
+                const option = document.createElement('option');
+                option.value = button.id;
+                option.text = '└'.repeat(level) + ' ' + button.text;
+                parentSelect.appendChild(option);
+
+                // Render sub-buttons
+                if (button.subButtons) {
+                    button.subButtons.forEach(sub => renderButton(sub, level + 1));
+                }
+            }
+
+            buttons.forEach(button => renderButton(button));
+        }
+
+        async function addButton() {
+            const text = document.getElementById('newButtonText').value;
+            const response = document.getElementById('newButtonResponse').value;
+            const parentId = document.getElementById('parentButton').value;
+            
+            await fetch('/api/buttons', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, response, parentId })
+            });
+            
+            loadButtons();
+            document.getElementById('newButtonText').value = '';
+            document.getElementById('newButtonResponse').value = '';
+            document.getElementById('previewContent').innerHTML = '';
+        }
+
+        async function deleteButton(id) {
+            await fetch(`/api/buttons/${id}`, { method: 'DELETE' });
+            loadButtons();
+        }
+
+        async function editButton(id) {
+            const button = await (await fetch(`/api/buttons/${id}`)).json();
+            const newText = prompt('Enter new button text:', button.text);
+            const newResponse = prompt('Enter new response (HTML formatting supported):\n\nExample:\n<b>Bold</b>\n<i>Italic</i>\n<a href="url">Link</a>', button.response);
+            
+            if (newText && newResponse) {
+                await fetch(`/api/buttons/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: newText, response: newResponse })
+                });
+                loadButtons();
+            }
+        }
+
+        // Add live preview functionality
+        document.getElementById('newButtonResponse').addEventListener('input', function() {
+            const preview = document.getElementById('previewContent');
+            preview.innerHTML = convertToHtmlFormat(this.value);
+        });
+
+        function convertToHtmlFormat(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                .replace(/__(.*?)__/g, '<u>$1</u>')
+                .replace(/~~(.*?)~~/g, '<s>$1</s>')
+                .replace(/`(.*?)`/g, '<code>$1</code>')
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+                .replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>
