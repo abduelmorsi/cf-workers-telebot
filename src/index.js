@@ -56,12 +56,15 @@ async function handleApiRequest(request, env) {
         }
         
         if (request.method === 'POST') {
-            const { text, response, parentId } = await request.json();
+            const { text, response, parentId, mediaUrl, mediaType, caption } = await request.json();
             const buttons = await env.USER_DATA.get('buttons', { type: 'json' }) || [];
             const newButton = { 
                 id: Date.now().toString(), 
                 text, 
-                response: convertToHtmlFormat(response), 
+                response: convertToHtmlFormat(response),
+                mediaUrl,
+                mediaType,
+                caption: caption ? convertToHtmlFormat(caption) : '',
                 subButtons: [] 
             };
 
@@ -124,6 +127,40 @@ async function handleApiRequest(request, env) {
         }
     }
 
+    // Add new broadcast endpoint
+    if (path === '/api/broadcast' && request.method === 'POST') {
+        const { message, mediaUrl, mediaType, caption } = await request.json();
+        const bot = new TelegramBot(env.TELEGRAM_BOT_TOKEN);
+        const { keys } = await env.USER_DATA.list({ prefix: 'user_' });
+        
+        for (const key of keys) {
+            if (key.name.endsWith('_started')) {
+                const chatId = key.name.split('_')[1];
+                try {
+                    if (mediaUrl) {
+                        switch(mediaType) {
+                            case 'photo':
+                                await bot.sendPhoto(chatId, mediaUrl, { caption });
+                                break;
+                            case 'document':
+                                await bot.sendDocument(chatId, mediaUrl, { caption });
+                                break;
+                            case 'sticker':
+                                await bot.sendSticker(chatId, mediaUrl);
+                                break;
+                        }
+                    }
+                    if (message) {
+                        await bot.sendMessage(chatId, message, { parseMode: 'HTML' });
+                    }
+                } catch (error) {
+                    console.error(`Failed to send to ${chatId}:`, error);
+                }
+            }
+        }
+        return new Response(JSON.stringify({ success: true }));
+    }
+
     return new Response('Not Found', { status: 404 });
 }
 
@@ -151,10 +188,30 @@ async function handleUpdate(update, bot, KV_NAMESPACE, env) {
                     }
                 });
             }
-            // Send the button's response
-            await bot.sendMessage(chatId, matchedButton.response, {
-                parseMode: 'HTML'
-            });
+            // Send media if present
+            if (matchedButton.mediaUrl) {
+                switch(matchedButton.mediaType) {
+                    case 'photo':
+                        await bot.sendPhoto(chatId, matchedButton.mediaUrl, {
+                            caption: matchedButton.caption
+                        });
+                        break;
+                    case 'document':
+                        await bot.sendDocument(chatId, matchedButton.mediaUrl, {
+                            caption: matchedButton.caption
+                        });
+                        break;
+                    case 'sticker':
+                        await bot.sendSticker(chatId, matchedButton.mediaUrl);
+                        break;
+                }
+            }
+            // Send text response if present
+            if (matchedButton.response) {
+                await bot.sendMessage(chatId, matchedButton.response, {
+                    parseMode: 'HTML'
+                });
+            }
             await bot.answerCallbackQuery(update.callback_query.id, 'Success!');
             return;
         }
@@ -194,9 +251,30 @@ async function handleUpdate(update, bot, KV_NAMESPACE, env) {
             });
         }
         
-        await bot.sendMessage(chatId, matchedButton.response, {
-            parseMode: 'HTML'
-        });
+        // Send media if present
+        if (matchedButton.mediaUrl) {
+            switch(matchedButton.mediaType) {
+                case 'photo':
+                    await bot.sendPhoto(chatId, matchedButton.mediaUrl, {
+                        caption: matchedButton.caption
+                    });
+                    break;
+                case 'document':
+                    await bot.sendDocument(chatId, matchedButton.mediaUrl, {
+                        caption: matchedButton.caption
+                    });
+                    break;
+                case 'sticker':
+                    await bot.sendSticker(chatId, matchedButton.mediaUrl);
+                    break;
+            }
+        }
+        // Send text response if present
+        if (matchedButton.response) {
+            await bot.sendMessage(chatId, matchedButton.response, {
+                parseMode: 'HTML'
+            });
+        }
         return;
     }
 

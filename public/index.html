@@ -134,6 +134,21 @@
         .preview-box b {
             color: var(--primary-color);
         }
+
+        .section-box {
+            background: var(--secondary-color);
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+
+        .media-upload {
+            background: var(--bg-color);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -146,49 +161,90 @@
     </div>
 
     <div id="managementInterface" class="hidden">
-        <h2>Button Management</h2>
-        <div>
-            <h3>Add New Button</h3>
-            <div style="margin-bottom: 10px;">
-                <label for="parentButton"><b>Choose where to add button:</b></label>
-                <select id="parentButton" style="width: 100%; margin: 5px 0;">
-                    <option value="">📎 Create as Top Level Button</option>
-                    <!-- Parent buttons will be populated here -->
-                </select>
-            </div>
-            <input type="text" id="newButtonText" placeholder="Button Text">
+        <!-- Add broadcast section at the top -->
+        <div class="section-box">
+            <h2>Broadcast Message</h2>
             <textarea 
-                id="newButtonResponse" 
-                placeholder="Button Response - Use markdown-style formatting:
+                id="broadcastMessage" 
+                placeholder="Enter broadcast message (supports same formatting as buttons)"
+                style="min-height: 100px;"
+            ></textarea>
+            <div class="media-upload">
+                <label><b>Add Media (Optional):</b></label>
+                <select id="mediaType">
+                    <option value="">No media</option>
+                    <option value="photo">Photo</option>
+                    <option value="document">Document</option>
+                    <option value="sticker">Sticker</option>
+                </select>
+                <input type="text" id="mediaUrl" placeholder="Media URL" style="width: 100%; margin-top: 5px;">
+                <input type="text" id="mediaCaption" placeholder="Media caption (optional)" style="width: 100%; margin-top: 5px;">
+            </div>
+            <div id="broadcastPreview" class="preview-box">
+                <b>Preview:</b>
+                <div id="broadcastPreviewContent"></div>
+            </div>
+            <button onclick="broadcast()" style="margin-top: 10px; background: var(--success-color);">
+                Send Broadcast
+            </button>
+        </div>
+
+        <div class="section-box">
+            <h2>Button Management</h2>
+            <div>
+                <h3>Add New Button</h3>
+                <div style="margin-bottom: 10px;">
+                    <label for="parentButton"><b>Choose where to add button:</b></label>
+                    <select id="parentButton" style="width: 100%; margin: 5px 0;">
+                        <option value="">📎 Create as Top Level Button</option>
+                        <!-- Parent buttons will be populated here -->
+                    </select>
+                </div>
+                <input type="text" id="newButtonText" placeholder="Button Text">
+                <textarea 
+                    id="newButtonResponse" 
+                    placeholder="Button Response - Use markdown-style formatting:
 **bold text**
 *italic text*
 __underlined text__
 ~~strikethrough~~
 `code block`
 [Link text](https://example.com)"
-            ></textarea>
-            <div id="preview" class="preview-box">
-                <b>Preview:</b>
-                <div id="previewContent"></div>
+                ></textarea>
+                <div id="preview" class="preview-box">
+                    <b>Preview:</b>
+                    <div id="previewContent"></div>
+                </div>
+                <div class="format-hints">
+                    Quick Formatting Guide:
+                    <ul>
+                        <li><code>**text**</code> - <b>bold text</b></li>
+                        <li><code>*text*</code> - <i>italic text</i></li>
+                        <li><code>__text__</code> - <u>underlined text</u></li>
+                        <li><code>~~text~~</code> - <s>strikethrough text</s></li>
+                        <li><code>`code`</code> - <code>monospace text</code></li>
+                        <li><code>[text](url)</code> - <a href="#">link</a></li>
+                        <li>Use regular newlines for paragraphs</li>
+                    </ul>
+                </div>
+                <div class="media-upload">
+                    <label><b>Add Media to Button (Optional):</b></label>
+                    <select id="buttonMediaType">
+                        <option value="">No media</option>
+                        <option value="photo">Photo</option>
+                        <option value="document">Document</option>
+                        <option value="sticker">Sticker</option>
+                    </select>
+                    <input type="text" id="buttonMediaUrl" placeholder="Media URL" style="width: 100%; margin-top: 5px;">
+                    <input type="text" id="buttonMediaCaption" placeholder="Media caption (optional)" style="width: 100%; margin-top: 5px;">
+                </div>
+                <button onclick="addButton()">Add Button</button>
             </div>
-            <div class="format-hints">
-                Quick Formatting Guide:
-                <ul>
-                    <li><code>**text**</code> - <b>bold text</b></li>
-                    <li><code>*text*</code> - <i>italic text</i></li>
-                    <li><code>__text__</code> - <u>underlined text</u></li>
-                    <li><code>~~text~~</code> - <s>strikethrough text</s></li>
-                    <li><code>`code`</code> - <code>monospace text</code></li>
-                    <li><code>[text](url)</code> - <a href="#">link</a></li>
-                    <li>Use regular newlines for paragraphs</li>
-                </ul>
-            </div>
-            <button onclick="addButton()">Add Button</button>
-        </div>
 
-        <div id="buttonList" class="button-list">
-            <h3>Existing Buttons</h3>
-            <!-- Buttons will be populated here -->
+            <div id="buttonList" class="button-list">
+                <h3>Existing Buttons</h3>
+                <!-- Buttons will be populated here -->
+            </div>
         </div>
     </div>
 
@@ -287,21 +343,61 @@ __underlined text__
             buttons.forEach(button => renderButton(button));
         }
 
+        async function broadcast() {
+            const message = document.getElementById('broadcastMessage').value;
+            const mediaUrl = document.getElementById('mediaUrl').value;
+            const mediaType = document.getElementById('mediaType').value;
+            const caption = document.getElementById('mediaCaption').value;
+
+            await fetch('/api/broadcast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    message: convertToHtmlFormat(message),
+                    mediaUrl,
+                    mediaType,
+                    caption: convertToHtmlFormat(caption)
+                })
+            });
+
+            // Clear inputs
+            document.getElementById('broadcastMessage').value = '';
+            document.getElementById('mediaUrl').value = '';
+            document.getElementById('mediaType').value = '';
+            document.getElementById('mediaCaption').value = '';
+            document.getElementById('broadcastPreviewContent').innerHTML = '';
+            alert('Broadcast sent!');
+        }
+
         async function addButton() {
             const text = document.getElementById('newButtonText').value;
             const response = document.getElementById('newButtonResponse').value;
             const parentId = document.getElementById('parentButton').value;
+            const mediaUrl = document.getElementById('buttonMediaUrl').value;
+            const mediaType = document.getElementById('buttonMediaType').value;
+            const caption = document.getElementById('buttonMediaCaption').value;
             
             await fetch('/api/buttons', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, response, parentId })
+                body: JSON.stringify({ 
+                    text, 
+                    response, 
+                    parentId,
+                    mediaUrl,
+                    mediaType,
+                    caption
+                })
             });
             
-            loadButtons();
+            // Clear all inputs
             document.getElementById('newButtonText').value = '';
             document.getElementById('newButtonResponse').value = '';
+            document.getElementById('buttonMediaUrl').value = '';
+            document.getElementById('buttonMediaType').value = '';
+            document.getElementById('buttonMediaCaption').value = '';
             document.getElementById('previewContent').innerHTML = '';
+            loadButtons();
         }
 
         async function deleteButton(id) {
@@ -327,6 +423,12 @@ __underlined text__
         // Add live preview functionality
         document.getElementById('newButtonResponse').addEventListener('input', function() {
             const preview = document.getElementById('previewContent');
+            preview.innerHTML = convertToHtmlFormat(this.value);
+        });
+
+        // Add live preview for broadcast
+        document.getElementById('broadcastMessage').addEventListener('input', function() {
+            const preview = document.getElementById('broadcastPreviewContent');
             preview.innerHTML = convertToHtmlFormat(this.value);
         });
 
