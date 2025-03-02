@@ -90,7 +90,9 @@ async function handleApiRequest(request, env) {
             }
 
             await env.USER_DATA.put('buttons', JSON.stringify(buttons));
-            await refreshAllKeyboards(env.USER_DATA, new TelegramBot(env.TELEGRAM_BOT_TOKEN));
+            // Create bot instance and refresh keyboards for all users
+            const bot = new TelegramBot(env.TELEGRAM_BOT_TOKEN);
+            await refreshAllKeyboards(env.USER_DATA, bot);
             return new Response(JSON.stringify(newButton));
         }
     }
@@ -234,19 +236,19 @@ async function handleUpdate(update, bot, KV_NAMESPACE, env) {
     const matchedButton = findButtonByText(buttons, text.replace(' 📁', ''));
     if (matchedButton) {
         if (matchedButton.subButtons?.length > 0) {
-            // If clicked button has sub-buttons, show them as keyboard
             const keyboardRows = chunks(matchedButton.subButtons.map(btn => ({
                 text: btn.text
             })), 2);
 
-            // Add back button at the top of sub-menu
             keyboardRows.unshift([{ text: '⬅️ Back' }]);
 
-            await bot.sendMessage(chatId, `${matchedButton.text}:`, {
+            await bot.sendMessage(chatId, `${matchedButton.text} options:`, {
                 replyMarkup: {
-                keyboard: keyboardRows,
-                resize_keyboard: true,
-                one_time_keyboard: false
+                    keyboard: keyboardRows,
+                    resize_keyboard: true,
+                    one_time_keyboard: false,
+                    remove_keyboard: false
+
                 }
             });
         }
@@ -371,19 +373,38 @@ function findButtonById(buttons, id) {
 // Add new helper functions
 async function showMainMenu(chatId, bot, KV_NAMESPACE, showMessage = false) {
     const buttons = await KV_NAMESPACE.get('buttons', { type: 'json' }) || [];
-    if (!buttons || buttons.length === 0) return;
+    if (!buttons || buttons.length === 0) {
+        await bot.sendMessage(chatId, 'No buttons configured', {
+            replyMarkup: {
+                remove_keyboard: true
+            }
+        });
+        return;
+    }
 
     const topLevelButtons = buttons.filter(b => !b.parentId);
     const keyboardRows = chunks(topLevelButtons.map(btn => ({
         text: btn.text
     })), 2);
 
-    await bot.sendMessage(chatId, showMessage ? 'Menu' : '', {
+    // await bot.sendMessage(chatId, showMessage ? 'Menu:' : 'Menu:', {
+    //     replyMarkup: {
+    //         keyboard: keyboardRows,
+    //         resize_keyboard: true,
+    //         one_time_keyboard: false,
+    //         remove_keyboard: false
+    //     }
+        
+    // });
+    await bot.sendMessage(chatId, 'Choose an option:', {
         replyMarkup: {
             keyboard: keyboardRows,
             resize_keyboard: true,
-            one_time_keyboard: false
+            one_time_keyboard: false,
+            remove_keyboard: false,
+            disable_notification: true
         }
+        
     });
 }
 
