@@ -11,7 +11,7 @@
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.6.4",
 		"vitest": "~2.1.9",
-		"wrangler": "^3.109.2"
+		"wrangler": "^4.2.0"
 	},
 	"dependencies": {
 		"telegram-webhook-js": "^1.0.51"

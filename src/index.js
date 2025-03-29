@@ -350,7 +350,8 @@ async function refreshAllKeyboards(KV_NAMESPACE, bot) {
         if (key.name.endsWith('_started')) {
             const chatId = key.name.split('_')[1];
             try {
-                await showMainMenu(chatId, bot, KV_NAMESPACE);
+                // Set silent to true to avoid notifications when updating keyboards
+                await showMainMenu(chatId, bot, KV_NAMESPACE, false, true);
             } catch (error) {
                 console.error(`Failed to update keyboard for ${chatId}:`, error);
             }
@@ -371,7 +372,7 @@ function findButtonById(buttons, id) {
 }
 
 // Add new helper functions
-async function showMainMenu(chatId, bot, KV_NAMESPACE, showMessage = false) {
+async function showMainMenu(chatId, bot, KV_NAMESPACE, showMessage = false, silent = false) {
     const buttons = await KV_NAMESPACE.get('buttons', { type: 'json' }) || [];
     if (!buttons || buttons.length === 0) {
         await bot.sendMessage(chatId, 'No buttons configured', {
@@ -387,24 +388,19 @@ async function showMainMenu(chatId, bot, KV_NAMESPACE, showMessage = false) {
         text: btn.text
     })), 2);
 
-    // await bot.sendMessage(chatId, showMessage ? 'Menu:' : 'Menu:', {
-    //     replyMarkup: {
-    //         keyboard: keyboardRows,
-    //         resize_keyboard: true,
-    //         one_time_keyboard: false,
-    //         remove_keyboard: false
-    //     }
-        
-    // });
-    await bot.sendMessage(chatId, 'Choose an option:', {
+    // Fixed message text to be consistent
+    const messageText = showMessage ? 'Menu:' : 'Choose an option:';
+    
+    // Properly structure the message options with disable_notification at the correct level
+    await bot.sendMessage(chatId, messageText, {
         replyMarkup: {
             keyboard: keyboardRows,
             resize_keyboard: true,
             one_time_keyboard: false,
-            remove_keyboard: false,
-            disable_notification: true
-        }
-        
+            remove_keyboard: false
+        },
+        disable_notification: silent,
+        parseMode: 'HTML'
     });
 }
 
