@@ -92,7 +92,7 @@ async function handleApiRequest(request, env) {
             await env.USER_DATA.put('buttons', JSON.stringify(buttons));
             // Create bot instance and refresh keyboards for all users
             const bot = new TelegramBot(env.TELEGRAM_BOT_TOKEN);
-            await refreshAllKeyboards(env.USER_DATA, bot);
+            await refreshAllKeyboards(env.USER_DATA, bot, env.TELEGRAM_BOT_TOKEN);
             return new Response(JSON.stringify(newButton));
         }
     }
@@ -105,7 +105,7 @@ async function handleApiRequest(request, env) {
             const newButtons = buttons.filter(b => b.id !== buttonId);
             await env.USER_DATA.put('buttons', JSON.stringify(newButtons));
             // Refresh keyboards after deletion
-            await refreshAllKeyboards(env.USER_DATA, new TelegramBot(env.TELEGRAM_BOT_TOKEN));
+            await refreshAllKeyboards(env.USER_DATA, new TelegramBot(env.TELEGRAM_BOT_TOKEN), env.TELEGRAM_BOT_TOKEN);
             return new Response(JSON.stringify({ success: true }));
         }
         
@@ -116,7 +116,7 @@ async function handleApiRequest(request, env) {
             );
             await env.USER_DATA.put('buttons', JSON.stringify(newButtons));
             // Refresh keyboards after update
-            await refreshAllKeyboards(env.USER_DATA, new TelegramBot(env.TELEGRAM_BOT_TOKEN));
+            await refreshAllKeyboards(env.USER_DATA, new TelegramBot(env.TELEGRAM_BOT_TOKEN), env.TELEGRAM_BOT_TOKEN);
             return new Response(JSON.stringify({ success: true }));
         }
 
@@ -227,7 +227,7 @@ async function handleUpdate(update, bot, KV_NAMESPACE, env) {
     
     // Handle back button
     if (text === '⬅️ Back') {
-        await showMainMenu(chatId, bot, KV_NAMESPACE, true);
+        await showMainMenu(chatId, bot, KV_NAMESPACE, env.TELEGRAM_BOT_TOKEN, true);
         return;
     }
 
@@ -281,7 +281,7 @@ async function handleUpdate(update, bot, KV_NAMESPACE, env) {
     }
 
     if (text.toLowerCase() === '/start' || text.toLowerCase() === '/refresh' || text.toLowerCase() === '/menu') {
-        await showMainMenu(chatId, bot, KV_NAMESPACE);
+        await showMainMenu(chatId, bot, KV_NAMESPACE, env.TELEGRAM_BOT_TOKEN);
         if (text.toLowerCase() === '/start') {
             await KV_NAMESPACE.put(`user_${chatId}_started`, 'true');
         }
@@ -343,19 +343,127 @@ async function broadcastMessage(bot, KV_NAMESPACE, message) {
     }
 }
 
-// Update refreshAllKeyboards to only show top-level buttons
-async function refreshAllKeyboards(KV_NAMESPACE, bot) {
+// Add this helper function to make direct Telegram API calls
+async function callTelegramApi(token, method, params = {}) {
+    const url = `https://api.telegram.org/bot${token}/${method}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+    });
+    
+    const data = await response.json();
+    if (!data.ok) {
+        console.error(`Telegram API error (${method}):`, data);
+        throw new Error(`Telegram API error: ${data.description || 'Unknown error'}`);
+    }
+    
+    return data.result;
+}
+
+// Update refreshAllKeyboards to always remove the old reply keyboard and send a new one
+async function refreshAllKeyboards(KV_NAMESPACE, bot, token) {
     const { keys } = await KV_NAMESPACE.list({ prefix: 'user_' });
+    const buttons = await KV_NAMESPACE.get('buttons', { type: 'json' }) || [];
+    const topLevelButtons = buttons.filter(b => !b.parentId);
+    if (topLevelButtons.length === 0) return;
+    
+    const keyboardRows = chunks(topLevelButtons.map(btn => ({ text: btn.text })), 2);
+    const replyKeyboard = {
+        keyboard: keyboardRows,
+        resize_keyboard: true,
+        one_time_keyboard: false,
+        remove_keyboard: false
+    };
+    
     for (const key of keys) {
         if (key.name.endsWith('_started')) {
             const chatId = key.name.split('_')[1];
             try {
-                // Set silent to true to avoid notifications when updating keyboards
-                await showMainMenu(chatId, bot, KV_NAMESPACE, false, true);
+                // Delete previous message if it exists
+                const lastMessageKey = `user_${chatId}_last_keyboard_msg`;
+                const lastMessageData = await KV_NAMESPACE.get(lastMessageKey, { type: 'json' });
+                if (lastMessageData) {
+                    try {
+                        await callTelegramApi(token, 'deleteMessage', {
+                            chat_id: chatId,
+                            message_id: lastMessageData.messageId
+                        });
+                    } catch (e) {
+                        console.log(`Couldn't delete old keyboard message for ${chatId}:`, e);
+                    }
+                }
+                
+                // Send new reply keyboard with updated buttons
+                const result = await callTelegramApi(token, 'sendMessage', {
+                    chat_id: chatId,
+                    text: 'Menu updated:',
+                    reply_markup: JSON.stringify(replyKeyboard),
+                    disable_notification: true
+                });
+                
+                await KV_NAMESPACE.put(lastMessageKey, JSON.stringify({
+                    messageId: result.message_id,
+                    date: Date.now()
+                }));
             } catch (error) {
                 console.error(`Failed to update keyboard for ${chatId}:`, error);
             }
         }
+    }
+}
+
+// Update showMainMenu to remove any existing reply keyboard and send a new one
+async function showMainMenu(chatId, bot, KV_NAMESPACE, token, showMessage = false, silent = false) {
+    const buttons = await KV_NAMESPACE.get('buttons', { type: 'json' }) || [];
+    if (!buttons || buttons.length === 0) {
+        await bot.sendMessage(chatId, 'No buttons configured', {
+            replyMarkup: { remove_keyboard: true }
+        });
+        return;
+    }
+    
+    const topLevelButtons = buttons.filter(b => !b.parentId);
+    const keyboardRows = chunks(topLevelButtons.map(btn => ({ text: btn.text })), 2);
+    const replyKeyboard = {
+        keyboard: keyboardRows,
+        resize_keyboard: true,
+        one_time_keyboard: false,
+        remove_keyboard: false
+    };
+    
+    const messageText = showMessage ? 'Menu:' : 'Choose an option:';
+    try {
+        // Delete previous menu message if exists
+        const lastMessageKey = `user_${chatId}_last_keyboard_msg`;
+        const lastMessageData = await KV_NAMESPACE.get(lastMessageKey, { type: 'json' });
+        if (lastMessageData) {
+            try {
+                await callTelegramApi(token, 'deleteMessage', {
+                    chat_id: chatId,
+                    message_id: lastMessageData.messageId
+                });
+            } catch (e) {
+                console.log(`Couldn't delete old menu message for ${chatId}:`, e);
+            }
+        }
+        
+        const result = await callTelegramApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: messageText,
+            reply_markup: JSON.stringify(replyKeyboard),
+            disable_notification: true,
+            parse_mode: 'HTML'
+        });
+        
+        await KV_NAMESPACE.put(lastMessageKey, JSON.stringify({
+            messageId: result.message_id,
+            date: Date.now()
+        }));
+    } catch (error) {
+        console.error('Error showing main menu:', error);
     }
 }
 
@@ -369,39 +477,6 @@ function findButtonById(buttons, id) {
         }
     }
     return null;
-}
-
-// Add new helper functions
-async function showMainMenu(chatId, bot, KV_NAMESPACE, showMessage = false, silent = false) {
-    const buttons = await KV_NAMESPACE.get('buttons', { type: 'json' }) || [];
-    if (!buttons || buttons.length === 0) {
-        await bot.sendMessage(chatId, 'No buttons configured', {
-            replyMarkup: {
-                remove_keyboard: true
-            }
-        });
-        return;
-    }
-
-    const topLevelButtons = buttons.filter(b => !b.parentId);
-    const keyboardRows = chunks(topLevelButtons.map(btn => ({
-        text: btn.text
-    })), 2);
-
-    // Fixed message text to be consistent
-    const messageText = showMessage ? 'Menu:' : 'Choose an option:';
-    
-    // Properly structure the message options with disable_notification at the correct level
-    await bot.sendMessage(chatId, messageText, {
-        replyMarkup: {
-            keyboard: keyboardRows,
-            resize_keyboard: true,
-            one_time_keyboard: false,
-            remove_keyboard: false
-        },
-        disable_notification: silent,
-        parseMode: 'HTML'
-    });
 }
 
 function findButtonByText(buttons, searchText) {
