@@ -1,4 +1,4 @@
-# ytuasu-telebot
+# cfworkers-telebot
 
 Cloudflare Worker + Telegram bot that serves a dynamic, hierarchical (multi-level) reply keyboard to users and allows admins to manage buttons, send media, and broadcast messages. It persists user / button state in a Cloudflare KV namespace and serves a small static frontend (from `public/`) that can call the management API.
 
